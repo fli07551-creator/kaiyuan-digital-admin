@@ -140,9 +140,9 @@ function settingCols(): ColumnDef[] {
 function filtersFor(family: Family, moduleLabel: string, pageLabel: string): FilterDef[] {
   if (moduleLabel === "工艺装备" && family === "archive") {
     return [
-      { key: "模具类型", label: "模具类型", kind: "select", options: ["模具一类", "模具二类", "外购模具"] },
-      { key: "模具编码", label: "模具编码", kind: "text" },
-      { key: "模具名称", label: "模具名称", kind: "text" },
+      { key: "类别", label: "模具类型", kind: "select", options: ["模具一类", "模具二类", "外购模具"] },
+      { key: "编码", label: "模具编码", kind: "text" },
+      { key: "名称", label: "模具名称", kind: "text" },
       { key: "规格", label: "规格", kind: "text" },
       { key: "状态", label: "状态", kind: "select", options: ["启用", "停用"] },
     ];
@@ -237,6 +237,7 @@ function buildRows(
       const prev = num(s, 40000, cur, 2);
       const rate = ((cur - prev) / prev) * 100;
       rows.push({
+        周期: "本月",
         项目: `${pageLabel.replace(/报表|统计|分析|管理/g, "")}-${pick(s, ["华东", "华北", "华南", "西南", "东北"], i)}`,
         本期: cur,
         上期: prev,
