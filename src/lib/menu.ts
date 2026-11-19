@@ -172,7 +172,7 @@ const rawMenuData: MenuItem[] = [
   {
     label: "应用中心",
     children: [
-      { label: "权限控制" },
+      { label: "权限控制", href: "/system/permissions" },
       { label: "基础设置" },
       { label: "期初设置" },
       { label: "期末处理" },

@@ -1,13 +1,9 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { allChildRoutes, resolveMenu } from "@/lib/menu";
+import { resolveMenu } from "@/lib/menu";
+import PermissionGuard from "@/components/PermissionGuard";
 
 type Params = { module: string; page: string };
-
-/** 预渲染全部二级菜单页面 */
-export function generateStaticParams() {
-  return allChildRoutes();
-}
 
 export async function generateMetadata({
   params,
@@ -33,6 +29,7 @@ export default async function ModulePage({ params }: { params: Promise<Params> }
   const current = found?.page;
 
   return (
+    <PermissionGuard module={moduleLabel} page={pageLabel}>
     <div className="mod-page">
       <div className="mod-head">
         <div className="mod-crumb">
@@ -104,5 +101,6 @@ export default async function ModulePage({ params }: { params: Promise<Params> }
         </Link>
       </div>
     </div>
+    </PermissionGuard>
   );
 }

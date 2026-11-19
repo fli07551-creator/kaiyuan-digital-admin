@@ -28,7 +28,8 @@ import {
   GitBranch,
   Cog,
 } from "lucide-react";
-import { menuData, type MenuItem } from "@/lib/menu";
+import type { MenuItem } from "@/lib/menu";
+import { useRbac } from "./RbacProvider";
 
 const iconMap: Record<string, React.ReactNode> = {
   综合驾驶舱: <Grid2X2 size={15} />,
@@ -130,14 +131,17 @@ function NavNode({ item, collapsed }: { item: MenuItem; collapsed: boolean }) {
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = useActivePath();
+  const { roleId, setRoleId, roles, visibleMenu } = useRbac();
   const segs = pathname.split("/").filter(Boolean);
 
   const crumbs =
-    pathname === "/users"
-      ? ["开元数智", "综合管理平台", "系统管理", "用户管理"]
-      : segs[0] === "m" && segs.length >= 3
-        ? ["开元数智", "综合管理平台", segs[1], segs[2]]
-        : ["开元数智", "综合管理平台", "数据驾驶舱"];
+    pathname === "/system/permissions"
+      ? ["开元数智", "综合管理平台", "应用中心", "权限控制"]
+      : pathname === "/users"
+        ? ["开元数智", "综合管理平台", "系统管理", "用户管理"]
+        : segs[0] === "m" && segs.length >= 3
+          ? ["开元数智", "综合管理平台", segs[1], segs[2]]
+          : ["开元数智", "综合管理平台", "数据驾驶舱"];
 
   return (
     <div className="app-shell">
@@ -149,7 +153,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
         </div>
         <nav className="sidebar-nav">
-          {menuData.map((item) => (
+          {visibleMenu.map((item) => (
             <NavNode key={item.label} item={item} collapsed={collapsed} />
           ))}
         </nav>
@@ -186,7 +190,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <button className="icon-btn" title="全屏">
             <Maximize2 size={15} />
           </button>
+          <Link
+            href="/system/permissions"
+            className={`icon-btn ${pathname === "/system/permissions" ? "on" : ""}`}
+            title="权限控制"
+          >
+            <Shield size={16} />
+          </Link>
           <div className="topbar-user">
+            <select
+              className="role-select"
+              value={roleId}
+              onChange={(e) => setRoleId(e.target.value)}
+              title="切换当前登录身份（演示）"
+            >
+              {roles.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
             <span>李飞</span>
             <span className="avatar">李</span>
           </div>
