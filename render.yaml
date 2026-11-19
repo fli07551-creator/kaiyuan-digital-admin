@@ -12,3 +12,7 @@ services:
     envVars:
       - key: NEXT_TELEMETRY_DISABLED
         value: "1"
+      # 数据库连接串含密钥，不写入仓库；在 Render 控制台手动设置 DATABASE_URL。
+      # sync: false 保证 Blueprint 同步时不会覆盖/清除该值。
+      - key: DATABASE_URL
+        sync: false
