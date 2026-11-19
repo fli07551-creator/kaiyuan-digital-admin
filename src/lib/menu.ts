@@ -9,7 +9,7 @@ export interface MenuItem {
   children?: MenuItem[];
 }
 
-export const menuData: MenuItem[] = [
+const rawMenuData: MenuItem[] = [
   // 综合驾驶舱（开元数智自研首页）
   { label: "综合驾驶舱", icon: "dashboard", href: "/" },
 
@@ -181,3 +181,46 @@ export const menuData: MenuItem[] = [
     ],
   },
 ];
+
+/**
+ * 为二级菜单补齐路由。
+ * 原站点击二级菜单是在右侧 iframe 载入对应功能页；这里映射为真实可访问的路由
+ * `/m/<一级模块>/<二级菜单>`，使侧栏可以逐级下钻（功能页本体为待接入占位）。
+ */
+function attachRoutes(items: MenuItem[]): MenuItem[] {
+  return items.map((item) => {
+    if (!item.children) return item;
+    return {
+      ...item,
+      children: item.children.map((child) => ({
+        ...child,
+        href:
+          child.href ??
+          `/m/${encodeURIComponent(item.label)}/${encodeURIComponent(child.label)}`,
+      })),
+    };
+  });
+}
+
+export const menuData: MenuItem[] = attachRoutes(rawMenuData);
+
+/** 按路由找出所属的一级模块与二级菜单，供面包屑/页面标题使用 */
+export function resolveMenu(moduleLabel: string, pageLabel: string) {
+  const mod = menuData.find((m) => m.label === moduleLabel);
+  if (!mod) return null;
+  const target = mod.children?.find((c) => c.label === pageLabel);
+  if (!target) return null;
+  return { module: mod, page: target, siblings: mod.children ?? [] };
+}
+
+/** 全部二级菜单路由，用于静态预渲染 */
+export function allChildRoutes() {
+  return menuData.flatMap((m) =>
+    (m.children ?? [])
+      .filter((c) => c.href && c.href.startsWith("/m/"))
+      .map((c) => ({
+        module: decodeURIComponent(c.href!.split("/")[2] ?? ""),
+        page: decodeURIComponent(c.href!.split("/")[3] ?? ""),
+      }))
+  );
+}

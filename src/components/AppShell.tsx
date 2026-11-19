@@ -49,17 +49,29 @@ const iconMap: Record<string, React.ReactNode> = {
   应用中心: <Grid2X2 size={15} />,
 };
 
+function useActivePath() {
+  const raw = usePathname();
+  // 中文路由在浏览器里是百分号编码的，解码后才能和菜单 label 对齐
+  try {
+    return decodeURIComponent(raw || "/");
+  } catch {
+    return raw || "/";
+  }
+}
+
 function NavNode({ item, collapsed }: { item: MenuItem; collapsed: boolean }) {
-  const pathname = usePathname();
+  const pathname = useActivePath();
   const hasChildren = !!item.children && item.children.length > 0;
-  const [open, setOpen] = useState(false);
+  // null = 跟随是否命中当前路由；true/false = 用户手动展开/收起
+  const [userOpen, setUserOpen] = useState<boolean | null>(null);
 
   const activeChild = item.children?.some(
-    (c) => c.href && pathname === c.href
+    (c) => c.href && pathname === decodeURIComponent(c.href)
   );
+  const expanded = userOpen ?? !!activeChild;
 
   if (!hasChildren) {
-    const isActive = !!item.href && pathname === item.href;
+    const isActive = !!item.href && pathname === decodeURIComponent(item.href);
     const inner = (
       <>
         <span className="nav-icon">{iconMap[item.label] ?? <FileText size={15} />}</span>
@@ -82,20 +94,20 @@ function NavNode({ item, collapsed }: { item: MenuItem; collapsed: boolean }) {
   return (
     <div className="nav-group">
       <div
-        className="nav-item"
-        onClick={() => !collapsed && setOpen((v) => !v)}
+        className={`nav-item ${item.children?.some((c) => c.href && pathname === decodeURIComponent(c.href)) ? "in-path" : ""}`}
+        onClick={() => !collapsed && setUserOpen(!expanded)}
         title={collapsed ? item.label : undefined}
       >
         <span className="nav-icon">{iconMap[item.label] ?? <FileText size={15} />}</span>
         <span className="nav-label">{item.label}</span>
-        <span className={`nav-arrow ${open || activeChild ? "open" : ""}`}>
+        <span className={`nav-arrow ${expanded ? "open" : ""}`}>
           <ChevronRight size={13} />
         </span>
       </div>
-      {(open || activeChild) && !collapsed && (
+      {expanded && !collapsed && (
         <div className="nav-children">
           {item.children!.map((child) => {
-            const isActive = !!child.href && pathname === child.href;
+            const isActive = !!child.href && pathname === decodeURIComponent(child.href);
             const inner = (
               <div className={`nav-leaf ${isActive ? "active" : ""}`}>
                 {child.label}
@@ -117,19 +129,24 @@ function NavNode({ item, collapsed }: { item: MenuItem; collapsed: boolean }) {
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
-  const pathname = usePathname();
+  const pathname = useActivePath();
+  const segs = pathname.split("/").filter(Boolean);
 
   const crumbs =
     pathname === "/users"
       ? ["开元数智", "综合管理平台", "系统管理", "用户管理"]
-      : ["开元数智", "综合管理平台", "数据驾驶舱"];
+      : segs[0] === "m" && segs.length >= 3
+        ? ["开元数智", "综合管理平台", segs[1], segs[2]]
+        : ["开元数智", "综合管理平台", "数据驾驶舱"];
 
   return (
     <div className="app-shell">
       <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
         <div className="sidebar-logo">
-          <span className="logo-mark">开</span>
-          <span className="logo-text">开元数智</span>
+          <Link href="/" className="sidebar-home" title="返回综合驾驶舱">
+            <span className="logo-mark">开</span>
+            <span className="logo-text">开元数智</span>
+          </Link>
         </div>
         <nav className="sidebar-nav">
           {menuData.map((item) => (
