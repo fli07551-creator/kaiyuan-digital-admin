@@ -36,10 +36,10 @@ function TriCheckbox({
 export default function PermissionsPage() {
   const {
     roles,
-    roleId,
-    setRoleId,
-    role,
-    has,
+    editRoleId,
+    setEditRoleId,
+    editRole,
+    hasFor,
     togglePage,
     setModulePages,
     resetRole,
@@ -47,10 +47,10 @@ export default function PermissionsPage() {
 
   const total = menuData.reduce((n, m) => n + (m.children?.length ?? 0), 0);
   const granted = menuData.reduce(
-    (n, m) => n + (m.children ?? []).filter((c) => has(m.label, c.label)).length,
+    (n, m) => n + (m.children ?? []).filter((c) => hasFor(editRoleId, m.label, c.label)).length,
     0
   );
-  const locked = !!role.all;
+  const locked = !!editRole.all;
 
   return (
     <div className="perm-page">
@@ -73,8 +73,8 @@ export default function PermissionsPage() {
         {roles.map((r) => (
           <button
             key={r.id}
-            className={`perm-tab ${r.id === roleId ? "active" : ""}`}
-            onClick={() => setRoleId(r.id)}
+            className={`perm-tab ${r.id === editRoleId ? "active" : ""}`}
+            onClick={() => setEditRoleId(r.id)}
           >
             {r.name}
           </button>
@@ -83,11 +83,11 @@ export default function PermissionsPage() {
 
       <div className="perm-rolebar">
         <div>
-          <strong>{role.name}</strong>
-          <span className="perm-rolebar-desc">{role.desc}</span>
+          <strong>{editRole.name}</strong>
+          <span className="perm-rolebar-desc">{editRole.desc}</span>
         </div>
         {!locked && (
-          <button className="perm-reset" onClick={resetRole} title="恢复到该角色的预设权限">
+          <button className="perm-reset" onClick={() => resetRole()} title="恢复到该角色的预设权限">
             <RotateCcw size={13} /> 恢复默认
           </button>
         )}
@@ -104,7 +104,7 @@ export default function PermissionsPage() {
         {menuData.map((mod) => {
           const children = mod.children ?? [];
           if (children.length === 0) return null;
-          const onCount = children.filter((c) => has(mod.label, c.label)).length;
+          const onCount = children.filter((c) => hasFor(editRoleId, mod.label, c.label)).length;
           const allOn = onCount === children.length;
           return (
             <div className="perm-module" key={mod.label}>
@@ -113,7 +113,7 @@ export default function PermissionsPage() {
                   checked={allOn}
                   indeterminate={onCount > 0 && !allOn}
                   disabled={locked}
-                  onChange={() => setModulePages(mod.label, !allOn)}
+                  onChange={() => setModulePages(mod.label, !allOn, editRoleId)}
                 />
                 <span className="perm-module-name">{mod.label}</span>
                 <span className="perm-module-count">
@@ -123,7 +123,7 @@ export default function PermissionsPage() {
               <div className="perm-children">
                 {children.map((c) => {
                   const key = pageKey(mod.label, c.label);
-                  const on = has(mod.label, c.label);
+                  const on = hasFor(editRoleId, mod.label, c.label);
                   return (
                     <label
                       key={key}
@@ -134,7 +134,7 @@ export default function PermissionsPage() {
                         className="perm-check"
                         checked={on}
                         disabled={locked}
-                        onChange={() => togglePage(key)}
+                        onChange={() => togglePage(key, editRoleId)}
                       />
                       <span>{c.label}</span>
                     </label>

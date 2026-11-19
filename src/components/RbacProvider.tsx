@@ -24,21 +24,28 @@ const STORAGE_KEY = "kaiyuan-rbac-v1";
 
 interface Persisted {
   roleId: string;
+  editRoleId?: string;
   perms: Record<string, string[]>;
 }
 
 interface RbacCtx {
   roles: RoleDef[];
+  /** 当前登录身份对应的角色（决定侧栏可见菜单，不受权限页编辑影响） */
   role: RoleDef;
   roleId: string;
-  setRoleId: (id: string) => void;
+  /** 权限页当前正在编辑的角色（与登录身份解耦） */
+  editRoleId: string;
+  editRole: RoleDef;
+  setEditRoleId: (id: string) => void;
   perms: Record<string, string[]>;
   /** 是否有某个功能权限；只传模块名时表示该模块下是否至少有一个功能 */
   has: (moduleLabel: string, pageLabel?: string) => boolean;
+  /** 判断指定角色是否有某功能权限（权限页勾选状态用） */
+  hasFor: (roleId: string, moduleLabel: string, pageLabel?: string) => boolean;
   visibleMenu: MenuItem[];
-  togglePage: (key: string) => void;
-  setModulePages: (moduleLabel: string, on: boolean) => void;
-  resetRole: () => void;
+  togglePage: (key: string, roleId?: string) => void;
+  setModulePages: (moduleLabel: string, on: boolean, roleId?: string) => void;
+  resetRole: (roleId?: string) => void;
   totalPages: number;
 }
 
@@ -47,12 +54,18 @@ const Ctx = createContext<RbacCtx | null>(null);
 export function RbacProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [roleId, setRoleIdState] = useState<string>(DEFAULT_ROLE_ID);
+  const [editRoleId, setEditRoleId] = useState<string>(DEFAULT_ROLE_ID);
   const [perms, setPerms] = useState<Record<string, string[]>>(() => defaultPerms());
   const [hydrated, setHydrated] = useState(false);
 
-  // 登录身份变化时，权限角色跟随该用户的岗位
+  // 登录身份变化时，权限角色跟随该用户的岗位。
+  // 同时把"正在编辑的角色"重置为该角色，避免停留在上次权限页选中的角色。
   useEffect(() => {
-    if (user) setRoleIdState(roleIdFromText(user.role));
+    if (user) {
+      const rid = roleIdFromText(user.role);
+      setRoleIdState(rid);
+      setEditRoleId(rid);
+    }
   }, [user]);
 
   // 读取本地保存的授权配置
@@ -61,7 +74,7 @@ export function RbacProvider({ children }: { children: React.ReactNode }) {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const data = JSON.parse(raw) as Persisted;
-        if (data.roleId) setRoleIdState(data.roleId);
+        if (data.editRoleId) setEditRoleId(data.editRoleId);
         if (data.perms) setPerms({ ...defaultPerms(), ...data.perms });
       }
     } catch {
@@ -74,29 +87,41 @@ export function RbacProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!hydrated) return;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ roleId, perms }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ roleId, editRoleId, perms }));
     } catch {
       /* 隐私模式下可能写入失败，忽略 */
     }
-  }, [roleId, perms, hydrated]);
+  }, [roleId, editRoleId, perms, hydrated]);
 
   const role = useMemo(
     () => ROLES.find((r) => r.id === roleId) ?? ROLES[0],
     [roleId]
   );
+  const editRole = useMemo(
+    () => ROLES.find((r) => r.id === editRoleId) ?? ROLES[0],
+    [editRoleId]
+  );
 
   const totalPages = useMemo(() => allPageKeys().length, []);
 
-  const has = useCallback(
-    (moduleLabel: string, pageLabel?: string) => {
-      if (role.all) return true;
-      const keys = perms[role.id] ?? [];
+  /** 判断指定角色是否拥有某项权限 */
+  const hasFor = useCallback(
+    (rid: string, moduleLabel: string, pageLabel?: string) => {
+      const r = ROLES.find((x) => x.id === rid);
+      if (r?.all) return true;
+      const keys = perms[rid] ?? [];
       if (!pageLabel) {
         return keys.some((k) => k.startsWith(`${moduleLabel}/`));
       }
       return keys.includes(pageKey(moduleLabel, pageLabel));
     },
-    [role, perms]
+    [perms]
+  );
+
+  /** 当前登录身份的权限判定（侧栏 / 越权拦截用） */
+  const has = useCallback(
+    (moduleLabel: string, pageLabel?: string) => hasFor(roleId, moduleLabel, pageLabel),
+    [hasFor, roleId]
   );
 
   const visibleMenu = useMemo(() => {
@@ -110,50 +135,51 @@ export function RbacProvider({ children }: { children: React.ReactNode }) {
       .filter((x): x is MenuItem => x !== null);
   }, [has]);
 
-  const setRoleId = useCallback((id: string) => setRoleIdState(id), []);
-
-  const togglePage = useCallback(
-    (key: string) => {
-      setPerms((prev) => {
-        const current = prev[roleId] ?? [];
-        const next = current.includes(key)
-          ? current.filter((k) => k !== key)
-          : [...current, key];
-        return { ...prev, [roleId]: next };
-      });
-    },
-    [roleId]
-  );
+  const togglePage = useCallback((key: string, rid?: string) => {
+    const target = rid ?? editRoleId;
+    setPerms((prev) => {
+      const current = prev[target] ?? [];
+      const next = current.includes(key)
+        ? current.filter((k) => k !== key)
+        : [...current, key];
+      return { ...prev, [target]: next };
+    });
+  }, [editRoleId]);
 
   const setModulePages = useCallback(
-    (moduleLabel: string, on: boolean) => {
+    (moduleLabel: string, on: boolean, rid?: string) => {
+      const target = rid ?? editRoleId;
       const mod = menuData.find((m) => m.label === moduleLabel);
       const keys = (mod?.children ?? []).map((c) => pageKey(moduleLabel, c.label));
       setPerms((prev) => {
-        const current = prev[roleId] ?? [];
+        const current = prev[target] ?? [];
         const rest = current.filter((k) => !keys.includes(k));
-        return { ...prev, [roleId]: on ? [...rest, ...keys] : rest };
+        return { ...prev, [target]: on ? [...rest, ...keys] : rest };
       });
     },
-    [roleId]
+    [editRoleId]
   );
 
-  const resetRole = useCallback(() => {
-    const preset = ROLES.find((r) => r.id === roleId);
+  const resetRole = useCallback((rid?: string) => {
+    const target = rid ?? editRoleId;
+    const preset = ROLES.find((r) => r.id === target);
     if (!preset) return;
     setPerms((prev) => ({
       ...prev,
-      [roleId]: preset.all ? allPageKeys() : [...preset.defaultPages],
+      [target]: preset.all ? allPageKeys() : [...preset.defaultPages],
     }));
-  }, [roleId]);
+  }, [editRoleId]);
 
   const value: RbacCtx = {
     roles: ROLES,
     role,
     roleId,
-    setRoleId,
+    editRole,
+    editRoleId,
+    setEditRoleId,
     perms,
     has,
+    hasFor,
     visibleMenu,
     togglePage,
     setModulePages,
