@@ -544,7 +544,9 @@ export default function UsersPage() {
 
       <div className="lp-note">
         账号保存在服务器端，所有设备共享：管理员新增的账号可直接被他人登录。
-        {isPgMode ? " 当前已接入数据库，账号长期保存。" : " 当前为文件存储，服务重新部署后会重置为初始管理员；配置 DATABASE_URL 即可切换为数据库长期保存。"}
+        {isPgMode
+          ? " 当前已接入 PostgreSQL 数据库，服务重启或重新部署后账号不会丢失。注意：Render 免费数据库创建 30 天后会到期，到期前请升级套餐或更换数据库连接串，并用「导出」备份账号。"
+          : " 当前为文件存储，服务重新部署后会重置为初始管理员；配置 DATABASE_URL 即可切换为数据库长期保存。"}
       </div>
 
       <div className="pagination">

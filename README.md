@@ -401,7 +401,7 @@ devDependencies 缺失后，Next.js 不加载 `tsconfig.json` 的 `paths` 别名
 | 文件存储 | 未设置 `DATABASE_URL` | 写入 `data/users.json`；Render 免费实例重启/重新部署后重置为初始管理员 |
 | **PostgreSQL** | 设置环境变量 `DATABASE_URL` | 建表 `kaiyuan_users`，账号**长期保存**，重新部署不丢失 |
 
-接入数据库只需三步（推荐 Neon 免费版，长期免费；Supabase、Render Postgres 均可）：
+接入数据库只需三步：
 
 1. 在数据库服务商处创建一个 PostgreSQL 实例，复制连接串
    （形如 `postgresql://user:pass@ep-xxx.neon.tech/neondb?sslmode=require`）；
@@ -410,6 +410,17 @@ devDependencies 缺失后，Next.js 不加载 `tsconfig.json` 的 `paths` 别名
 
 驱动为 `pg`（`serverExternalPackages` 已配置），云数据库自动启用 SSL；
 表结构：`user_id` 主键、`username` 唯一，其余字段与 `UserRow` 一一对应。
+
+#### 13.4.1 当前线上配置（2026-11-19）
+
+- 数据库：Render 免费 PostgreSQL，实例 `kaiyuan-users-db`（Singapore，与 Web Service 同区域，走内网连接）
+- 连接串通过 Render 控制台 Environment 手动设置；`render.yaml` 中以 `sync: false` 声明该变量，
+  **连接串不写入 Git 仓库**，Blueprint 同步也不会覆盖它
+- 已验收：管理员建账号 → 全新会话登录成功 → **执行 Restart service 后账号仍可登录**
+- ⚠️ Render 免费数据库**创建 30 天后到期**。到期前请二选一：
+  1. 在 Render 数据库 Plan 页升级为付费套餐（保持同一连接串，代码不用改）；
+  2. 换用 Neon 等永久免费 PostgreSQL，只改 Render 上的 `DATABASE_URL` 值并重新部署。
+  更换前建议先在「用户管理」用「导出」备份账号 CSV，导入到新库即可。
 
 ### 13.5 应急办法
 
