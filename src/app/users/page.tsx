@@ -65,6 +65,9 @@ const emptyForm = (): UserRow => ({
   password: "",
 });
 
+/** 构建时注入的存储模式标记（database / file） */
+const isPgMode = process.env.NEXT_PUBLIC_USER_STORE === "database";
+
 /** 服务端接口封装：自动带管理员身份头 */
 async function api<T>(
   url: string,
@@ -541,7 +544,7 @@ export default function UsersPage() {
 
       <div className="lp-note">
         账号保存在服务器端，所有设备共享：管理员新增的账号可直接被他人登录。
-        服务重启或重新部署后账号数据会重置为初始管理员，如需长期保存请联系管理员接入数据库。
+        {isPgMode ? " 当前已接入数据库，账号长期保存。" : " 当前为文件存储，服务重新部署后会重置为初始管理员；配置 DATABASE_URL 即可切换为数据库长期保存。"}
       </div>
 
       <div className="pagination">

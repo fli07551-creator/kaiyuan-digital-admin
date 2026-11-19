@@ -319,10 +319,9 @@ devDependencies 缺失后，Next.js 不加载 `tsconfig.json` 的 `paths` 别名
 | 查询 / 重置 | 关键字（编号/用户名/手机号/姓名/角色）+ 状态筛选，回车即查询 |
 | 分页 | 10/20/50 条每页切换，页码跳转 |
 
-账号保存在**服务器端**（`data/users.json`，接口 `/api/users`），所有设备共享同一份用户表：
+账号保存在**服务器端**（`data/users.json` 或 PostgreSQL，接口 `/api/users`），所有设备共享同一份用户表：
 管理员新增的账号，其他人换浏览器、换电脑也能直接登录。
-> 注意：Render 免费实例的文件系统是临时的，服务重新部署/重启后账号会重置为初始管理员。
-> 需要长期保存时，把 `src/lib/serverUserStore.ts` 的读写换成数据库（如 Render Postgres / 免费云数据库）即可，接口层不用动。
+> 设置环境变量 `DATABASE_URL` 后自动切换为 PostgreSQL 长期保存（详见第十三章）。
 
 ---
 
@@ -393,16 +392,30 @@ devDependencies 缺失后，Next.js 不加载 `tsconfig.json` 的 `paths` 别名
 - 密码错误被拒绝；停用后登录被拒绝；非管理员调用用户接口返回 403；
 - 系统管理员账号依旧禁止删除、禁止停用。
 
-### 13.4 数据持久化说明
+### 13.4 数据持久化与数据库接入
 
-Render 免费实例文件系统为临时盘：**服务重新部署或重启后，账号表会重置为初始管理员**。
-长期方案：接入数据库（Render Postgres、免费云数据库等），只需替换 `serverUserStore.ts`
-的读写实现，前端与接口无需改动。
+账号表支持两种存储模式（`src/lib/serverUserStore.ts` 自动切换）：
+
+| 模式 | 条件 | 说明 |
+| --- | --- | --- |
+| 文件存储 | 未设置 `DATABASE_URL` | 写入 `data/users.json`；Render 免费实例重启/重新部署后重置为初始管理员 |
+| **PostgreSQL** | 设置环境变量 `DATABASE_URL` | 建表 `kaiyuan_users`，账号**长期保存**，重新部署不丢失 |
+
+接入数据库只需三步（推荐 Neon 免费版，长期免费；Supabase、Render Postgres 均可）：
+
+1. 在数据库服务商处创建一个 PostgreSQL 实例，复制连接串
+   （形如 `postgresql://user:pass@ep-xxx.neon.tech/neondb?sslmode=require`）；
+2. Render 服务「Environment」中添加环境变量 `DATABASE_URL`，值为该连接串；
+3. 保存后自动触发部署，首次访问接口时自动建表并初始化系统管理员（吴志兵 / 123456）。
+
+驱动为 `pg`（`serverExternalPackages` 已配置），云数据库自动启用 SSL；
+表结构：`user_id` 主键、`username` 唯一，其余字段与 `UserRow` 一一对应。
 
 ### 13.5 应急办法
 
-如果管理员密码被改错且无法登录：重新部署服务（或重启实例）即可重置为默认管理员
-吴志兵 / 123456。
+- 文件模式：管理员密码被改错且无法登录时，重新部署服务即可重置为默认管理员（吴志兵 / 123456）。
+- 数据库模式：登录数据库执行
+  `UPDATE kaiyuan_users SET password='123456' WHERE username='吴志兵';`。
 
 ---
 
