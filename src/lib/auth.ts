@@ -11,19 +11,60 @@ export interface Session {
   role: string;
 }
 
-/** 读取用户表：优先本地已编辑的数据，否则用内置种子 */
+/** 必须保证可登录的演示账号：本地数据被改坏时自动补回 */
+const MUST_HAVE_ACCOUNTS = ["吴志兵", "ceshi", "杜晓晓"];
+
+/**
+ * 读取用户表：优先本地已编辑的数据，否则用内置种子。
+ * 自愈：若本地数据缺少演示账号（例如被导入/编辑覆盖过），自动补回并写回，
+ * 保证任何情况下演示账号都能登录。用户自己新增的账号不受影响。
+ */
 export function loadUsers(): UserRow[] {
   if (typeof window === "undefined") return userRows;
   try {
     const raw = localStorage.getItem(USERS_KEY);
     if (raw) {
       const arr = JSON.parse(raw) as UserRow[];
-      if (Array.isArray(arr) && arr.length) return arr;
+      if (Array.isArray(arr) && arr.length) {
+        let changed = false;
+        const merged = [...arr];
+        for (const name of MUST_HAVE_ACCOUNTS) {
+          const exists = merged.some(
+            (u) => (u.username || "").toLowerCase() === name.toLowerCase()
+          );
+          if (!exists) {
+            const seed = userRows.find((s) => s.username === name);
+            if (seed) {
+              merged.push({ ...seed });
+              changed = true;
+            }
+          }
+        }
+        if (changed) {
+          try {
+            localStorage.setItem(USERS_KEY, JSON.stringify(merged));
+          } catch {
+            /* 忽略 */
+          }
+        }
+        return merged;
+      }
     }
   } catch {
     /* 忽略损坏数据 */
   }
   return userRows;
+}
+
+/** 彻底恢复内置演示用户（丢弃本地所有改动） */
+export function resetUsers(): UserRow[] {
+  const fresh = userRows.map((u) => ({ ...u }));
+  try {
+    localStorage.setItem(USERS_KEY, JSON.stringify(fresh));
+  } catch {
+    /* 忽略 */
+  }
+  return fresh;
 }
 
 export function saveUsers(list: UserRow[]) {

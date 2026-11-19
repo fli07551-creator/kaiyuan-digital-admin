@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, LogIn, AlertCircle, BarChart3, Boxes, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
+import { resetUsers } from "@/lib/auth";
 
 const DEMO = [
   { account: "吴志兵", role: "超级管理员 · 全部权限" },
@@ -20,6 +21,7 @@ export default function LoginPage() {
   const [remember, setRemember] = useState(true);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  const [recovered, setRecovered] = useState(false);
 
   // 已登录直接进后台
   useEffect(() => {
@@ -63,6 +65,21 @@ export default function LoginPage() {
     setAccount(acc);
     setPassword("123456");
     setErr("");
+  };
+
+  // 修复本地用户数据被覆盖导致演示账号无法登录
+  const recover = () => {
+    try {
+      resetUsers();
+      localStorage.removeItem("kaiyuan-last-account");
+    } catch {
+      /* 忽略 */
+    }
+    setAccount("");
+    setPassword("");
+    setErr("");
+    setRecovered(true);
+    window.setTimeout(() => setRecovered(false), 4000);
   };
 
   return (
@@ -173,6 +190,9 @@ export default function LoginPage() {
                 <span>{d.role}</span>
               </button>
             ))}
+            <button type="button" className="login-recover" onClick={recover}>
+              {recovered ? "已恢复演示账号，请重新登录" : "登不进去？点此恢复演示账号"}
+            </button>
           </div>
         </form>
       </div>

@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { userRows as seedRows, type UserRow } from "@/lib/users";
+import { loadUsers as loadUsersSafe } from "@/lib/auth";
 
 const STORAGE_KEY = "kaiyuan-users-v1";
 
@@ -72,17 +73,9 @@ export default function UsersPage() {
   const [pwdReset, setPwdReset] = useState<{ user: UserRow; value: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // 读取本地数据
+  // 读取本地数据（统一走自愈逻辑，保证演示账号始终存在）
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as UserRow[];
-        if (Array.isArray(parsed) && parsed.length) setRows(parsed);
-      }
-    } catch {
-      /* 忽略损坏数据 */
-    }
+    setRows(loadUsersSafe());
     setHydrated(true);
   }, []);
 
