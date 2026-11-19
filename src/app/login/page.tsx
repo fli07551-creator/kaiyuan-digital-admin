@@ -33,12 +33,12 @@ export default function LoginPage() {
     }
   }, []);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
     setErr("");
     setLoading(true);
-    const result = login(account, password);
+    const result = await login(account, password);
     if (result.ok) {
       try {
         if (remember) localStorage.setItem("kaiyuan-last-account", account.trim());

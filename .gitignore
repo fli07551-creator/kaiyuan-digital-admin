@@ -9,6 +9,9 @@
 /out/
 next-env.d.ts
 
+# 服务端运行时用户数据（账号表）
+/data/
+
 # production
 /build
 

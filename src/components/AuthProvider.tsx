@@ -13,7 +13,8 @@ interface AuthCtx {
   user: Session | null;
   /** 是否已完成本地会话读取（避免首屏误跳登录页） */
   ready: boolean;
-  login: (username: string, password: string) => AuthResult;
+  /** 服务端校验登录，所有设备共用同一份账号表 */
+  login: (username: string, password: string) => Promise<AuthResult>;
   logout: () => void;
 }
 
@@ -28,14 +29,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setReady(true);
   }, []);
 
-  const login = useCallback((username: string, password: string): AuthResult => {
-    const result = authenticate(username, password);
-    if (result.ok) {
-      setUser(result.session);
-      saveSession(result.session);
-    }
-    return result;
-  }, []);
+  const login = useCallback(
+    async (username: string, password: string): Promise<AuthResult> => {
+      const result = await authenticate(username, password);
+      if (result.ok) {
+        setUser(result.session);
+        saveSession(result.session);
+      }
+      return result;
+    },
+    []
+  );
 
   const logout = useCallback(() => {
     setUser(null);

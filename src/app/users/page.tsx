@@ -18,11 +18,15 @@ import {
   X,
 } from "lucide-react";
 import {
-  userRows as seedRows,
   ADMIN_USER_ID,
   type UserRow,
 } from "@/lib/users";
-import { loadUsers as loadUsersSafe, saveUsers } from "@/lib/auth";
+import {
+  seedUserRows,
+  readLocalUsersForMigration,
+  clearLocalUsers,
+} from "@/lib/auth";
+import { useAuth } from "@/components/AuthProvider";
 
 const ROLE_OPTIONS = [
   "超级管理员",
@@ -56,13 +60,41 @@ const emptyForm = (): UserRow => ({
   remark: "--",
   status: "启用",
   lockCount: "--",
-  creator: "李飞",
+  creator: "",
   createdAt: "",
   password: "",
 });
 
+/** 服务端接口封装：自动带管理员身份头 */
+async function api<T>(
+  url: string,
+  method: string,
+  body: unknown,
+  adminId: string
+): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        "x-kaiyuan-user": adminId,
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { ok: false, error: data?.error || `请求失败（${res.status}）` };
+    }
+    return { ok: true, data: data as T };
+  } catch {
+    return { ok: false, error: "网络异常，请稍后重试" };
+  }
+}
+
 export default function UsersPage() {
-  const [rows, setRows] = useState<UserRow[]>(seedRows);
+  const { user } = useAuth();
+  const adminId = user?.userId || "";
+  const [rows, setRows] = useState<UserRow[]>(seedUserRows);
   const [hydrated, setHydrated] = useState(false);
   const [keyword, setKeyword] = useState("");
   const [applied, setApplied] = useState("");
@@ -72,25 +104,50 @@ export default function UsersPage() {
   const [pageSize, setPageSize] = useState(10);
   const [editing, setEditing] = useState<{ mode: "create" | "edit"; data: UserRow } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [pwdReset, setPwdReset] = useState<{ user: UserRow; value: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // 读取本地数据：自动清理旧版演示账号，保留系统管理员和自建账号
-  useEffect(() => {
-    setRows(loadUsersSafe());
-    setHydrated(true);
-  }, []);
-
-  // 持久化
-  useEffect(() => {
-    if (!hydrated) return;
-    saveUsers(rows);
-  }, [rows, hydrated]);
-
   const say = (msg: string) => {
     setToast(msg);
-    window.setTimeout(() => setToast(null), 2200);
+    window.setTimeout(() => setToast(null), 2600);
   };
+
+  // 读取服务端用户表（全设备共享）；并把旧版本地账号一次性迁移到服务端
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const localCustom = readLocalUsersForMigration();
+      if (localCustom.length > 0) {
+        const r = await fetch("/api/users/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ users: localCustom }),
+        })
+          .then((res) => res.json())
+          .catch(() => null);
+        if (!cancelled && r?.users && Array.isArray(r.users)) {
+          setRows(r.users as UserRow[]);
+          clearLocalUsers();
+          if (r.merged > 0) say(`已将 ${r.merged} 个本地账号同步到服务器，其他设备现在可以登录`);
+        }
+        return;
+      }
+      const res = await fetch("/api/users", { headers: { "x-kaiyuan-user": adminId } });
+      if (cancelled) return;
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data?.users && Array.isArray(data.users)) setRows(data.users as UserRow[]);
+      } else {
+        say("读取用户列表失败，请确认以系统管理员身份登录");
+      }
+    })();
+    setHydrated(true);
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminId]);
 
   const isProtectedAdmin = (row: UserRow) => row.userId === ADMIN_USER_ID;
 
@@ -149,8 +206,8 @@ export default function UsersPage() {
     if (row) openEdit(row);
   };
 
-  const saveForm = () => {
-    if (!editing) return;
+  const saveForm = async () => {
+    if (!editing || busy) return;
     const d = editing.data;
     if (!d.username.trim()) {
       say("用户名为必填项");
@@ -160,61 +217,82 @@ export default function UsersPage() {
       say("系统管理员账号不能停用");
       return;
     }
+    setBusy(true);
     if (editing.mode === "create") {
-      setRows((prev) => [
-        {
-          ...d,
-          userId: newUserId(),
-          createdAt: now(),
-          creator: "李飞",
-          remark: d.remark.trim() || "--",
-          phone: d.phone.trim() || "--",
-          password: d.password?.trim() || "123456",
-        },
-        ...prev,
-      ]);
-      say(`已新增用户「${d.username}」，初始密码 ${d.password?.trim() || "123456"}`);
+      const payload: UserRow = {
+        ...d,
+        userId: newUserId(),
+        createdAt: now(),
+        creator: user?.name || "管理员",
+        remark: d.remark.trim() || "--",
+        phone: d.phone.trim() || "--",
+        password: d.password?.trim() || "123456",
+      };
+      const r = await api<{ users: UserRow[] }>("/api/users", "POST", payload, adminId);
+      setBusy(false);
+      if (!r.ok) {
+        say(r.error);
+        return;
+      }
+      setRows(r.data.users);
+      say(`已新增用户「${d.username}」，初始密码 ${d.password?.trim() || "123456"}，其他设备可直接登录`);
     } else {
-      setRows((prev) =>
-        prev.map((r) =>
-          r.userId === d.userId
-            ? { ...d, password: d.password?.trim() || r.password || "123456" }
-            : r
-        )
-      );
+      const payload: UserRow = {
+        ...d,
+        password: d.password?.trim() || undefined,
+      };
+      const r = await api<{ users: UserRow[] }>("/api/users", "PUT", payload, adminId);
+      setBusy(false);
+      if (!r.ok) {
+        say(r.error);
+        return;
+      }
+      setRows(r.data.users);
       say(`已保存「${d.username}」的修改`);
     }
     setEditing(null);
   };
 
   /* ---------- 停用 / 启用 ---------- */
-  const setStatus = (status: "启用" | "停用") => {
+  const setStatus = async (status: "启用" | "停用") => {
     if (selected.length === 0) {
       say("请先勾选要操作的用户");
       return;
     }
-    if (
-      status === "停用" &&
-      rows.some((r) => selected.includes(r.userId) && isProtectedAdmin(r))
-    ) {
+    if (status === "停用" && rows.some((r) => selected.includes(r.userId) && isProtectedAdmin(r))) {
       say("系统管理员账号不能停用");
       return;
     }
-    setRows((prev) =>
-      prev.map((r) => (selected.includes(r.userId) ? { ...r, status } : r))
-    );
+    setBusy(true);
+    const updates = rows
+      .filter((r) => selected.includes(r.userId) && r.status !== status)
+      .map((r) => ({ ...r, status }));
+    const r = await api<{ users: UserRow[] }>("/api/users", "PUT", updates, adminId);
+    setBusy(false);
+    if (!r.ok) {
+      say(r.error);
+      return;
+    }
+    setRows(r.data.users);
     say(`已将 ${selected.length} 个用户设为「${status}」`);
     setSelected([]);
   };
 
   /* ---------- 删除 ---------- */
-  const removeRow = (row: UserRow) => {
+  const removeRow = async (row: UserRow) => {
     if (isProtectedAdmin(row)) {
       say("系统管理员账号不能删除");
       return;
     }
-    if (!window.confirm(`确认删除用户「${row.username}」？删除后不可恢复。`)) return;
-    setRows((prev) => prev.filter((r) => r.userId !== row.userId));
+    if (!window.confirm(`确认删除用户「${row.username}」？删除后该账号将无法登录。`)) return;
+    setBusy(true);
+    const r = await api<{ users: UserRow[] }>("/api/users", "DELETE", { userIds: [row.userId] }, adminId);
+    setBusy(false);
+    if (!r.ok) {
+      say(r.error);
+      return;
+    }
+    setRows(r.data.users);
     setSelected((s) => s.filter((id) => id !== row.userId));
     say(`已删除「${row.username}」`);
   };
@@ -224,20 +302,26 @@ export default function UsersPage() {
     setPwdReset({ user: row, value: "" });
   };
 
-  const confirmPwdReset = () => {
-    if (!pwdReset) return;
+  const confirmPwdReset = async () => {
+    if (!pwdReset || busy) return;
     const v = pwdReset.value.trim();
     if (v.length < 6) {
       say("密码至少 6 位");
       return;
     }
-    setRows((prev) =>
-      prev.map((r) =>
-        r.userId === pwdReset.user.userId
-          ? { ...r, password: v, lockCount: "0", remark: "密码已重置" }
-          : r
-      )
+    setBusy(true);
+    const r = await api<{ users: UserRow[] }>(
+      "/api/users",
+      "PUT",
+      { ...pwdReset.user, password: v, lockCount: "0", remark: "密码已重置" },
+      adminId
     );
+    setBusy(false);
+    if (!r.ok) {
+      say(r.error);
+      return;
+    }
+    setRows(r.data.users);
     say(`「${pwdReset.user.username}」的登录密码已更新`);
     setPwdReset(null);
   };
@@ -264,10 +348,10 @@ export default function UsersPage() {
     say(`已导出 ${target.length} 条用户数据`);
   };
 
-  /* ---------- 导入 CSV ---------- */
+  /* ---------- 导入 CSV（写入服务端） ---------- */
   const importCsv = (file: File) => {
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       const text = String(reader.result || "").replace(/^\uFEFF/, "");
       const lines = text.split(/\r?\n/).filter((l) => l.trim());
       if (lines.length <= 1) {
@@ -287,16 +371,30 @@ export default function UsersPage() {
           remark: cols[5] || "--",
           status: cols[6] === "停用" ? "停用" : "启用",
           lockCount: cols[7] || "--",
-          creator: cols[8] || "导入",
+          creator: cols[8] || user?.name || "导入",
           createdAt: cols[9] || now(),
+          password: "123456",
         });
       });
       if (next.length === 0) {
         say("未解析到有效数据行");
         return;
       }
-      setRows((prev) => [...next, ...prev]);
-      say(`已导入 ${next.length} 条用户数据`);
+      setBusy(true);
+      const r = await api<{ users: UserRow[]; added: number; conflict: string | null }>(
+        "/api/users",
+        "POST",
+        next,
+        adminId
+      );
+      setBusy(false);
+      if (!r.ok) {
+        say(r.error);
+        return;
+      }
+      setRows(r.data.users);
+      const skipped = next.length - r.data.added;
+      say(`已导入 ${r.data.added} 个用户${skipped > 0 ? `，${skipped} 个因用户名重复跳过` : ""}`);
     };
     reader.readAsText(file, "utf-8");
   };
@@ -310,16 +408,16 @@ export default function UsersPage() {
         <button className="btn" onClick={openBatchEdit}>
           <Pencil size={14} /> 编辑
         </button>
-        <button className="btn" onClick={() => setStatus("停用")} disabled={selected.length === 0}>
+        <button className="btn" onClick={() => setStatus("停用")} disabled={selected.length === 0 || busy}>
           <Ban size={14} /> 停用
         </button>
-        <button className="btn" onClick={() => setStatus("启用")} disabled={selected.length === 0}>
+        <button className="btn" onClick={() => setStatus("启用")} disabled={selected.length === 0 || busy}>
           <PlayCircle size={14} /> 启用
         </button>
         <button className="btn" onClick={exportCsv}>
           <Download size={14} /> 导出
         </button>
-        <button className="btn" onClick={() => fileRef.current?.click()}>
+        <button className="btn" onClick={() => fileRef.current?.click()} disabled={busy}>
           <Upload size={14} /> 导入
         </button>
         <input
@@ -433,12 +531,17 @@ export default function UsersPage() {
             {paged.length === 0 && (
               <tr>
                 <td colSpan={12} style={{ textAlign: "center", color: "#909399", height: 80 }}>
-                  暂无数据
+                  {hydrated ? "暂无数据" : "正在加载…"}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+      </div>
+
+      <div className="lp-note">
+        账号保存在服务器端，所有设备共享：管理员新增的账号可直接被他人登录。
+        服务重启或重新部署后账号数据会重置为初始管理员，如需长期保存请联系管理员接入数据库。
       </div>
 
       <div className="pagination">
@@ -587,8 +690,8 @@ export default function UsersPage() {
               <button className="btn" onClick={() => setEditing(null)}>
                 取消
               </button>
-              <button className="btn btn-primary" onClick={saveForm}>
-                保存
+              <button className="btn btn-primary" onClick={saveForm} disabled={busy}>
+                {busy ? "保存中…" : "保存"}
               </button>
             </div>
           </div>
@@ -625,8 +728,8 @@ export default function UsersPage() {
               <button className="btn" onClick={() => setPwdReset(null)}>
                 取消
               </button>
-              <button className="btn btn-primary" onClick={confirmPwdReset}>
-                确认重置
+              <button className="btn btn-primary" onClick={confirmPwdReset} disabled={busy}>
+                {busy ? "重置中…" : "确认重置"}
               </button>
             </div>
           </div>

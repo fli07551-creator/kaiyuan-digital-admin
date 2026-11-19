@@ -5,10 +5,9 @@ import {
   type UserRow,
 } from "./users";
 
-/** 用户表使用新键，旧版演示账号数据会在首次读取时迁移清理 */
-export const USERS_KEY = "kaiyuan-users-v2";
-const LEGACY_USERS_KEY = "kaiyuan-users-v1";
 export const SESSION_KEY = "kaiyuan-auth-v1";
+/** 旧版本地用户表键，仅用于一次性迁移到服务端 */
+const LEGACY_USERS_KEYS = ["kaiyuan-users-v2", "kaiyuan-users-v1"];
 
 /** 登录会话（不含密码） */
 export interface Session {
@@ -18,119 +17,70 @@ export interface Session {
   role: string;
 }
 
-function seedUsers(): UserRow[] {
-  return userRows.map((u) => ({ ...u }));
-}
-
-function persistUsers(list: UserRow[]) {
-  try {
-    localStorage.setItem(USERS_KEY, JSON.stringify(list));
-    localStorage.removeItem(LEGACY_USERS_KEY);
-  } catch {
-    /* 忽略写入失败 */
-  }
-}
-
-/** 清理旧版内置演示账号，并确认系统管理员始终存在 */
-function normalizeUsers(list: UserRow[]): { list: UserRow[]; changed: boolean } {
-  const cleaned = list.filter(
-    (u) => u && u.userId !== undefined && !LEGACY_DEMO_USER_IDS.includes(u.userId)
-  );
-  const hasAdmin = cleaned.some((u) => u.userId === ADMIN_USER_ID);
-  const result = hasAdmin ? cleaned : [...seedUsers(), ...cleaned];
-  return {
-    list: result,
-    changed: !hasAdmin || cleaned.length !== list.length || result.length !== list.length,
-  };
-}
-
-/**
- * 首次升级时读取旧用户表：只保留管理员 + 管理员自行新增的账号，
- * 旧版内置演示账号全部丢弃，然后迁移到新存储键。
- */
-function migrateLegacyUsers(): UserRow[] {
-  const fresh = seedUsers();
-  try {
-    const raw = localStorage.getItem(LEGACY_USERS_KEY);
-    if (raw) {
-      const legacy = JSON.parse(raw) as UserRow[];
-      if (Array.isArray(legacy)) {
-        const custom = legacy.filter(
-          (u) => u && u.userId !== ADMIN_USER_ID && !LEGACY_DEMO_USER_IDS.includes(u.userId)
-        );
-        const merged = [...fresh, ...custom];
-        persistUsers(merged);
-        return merged;
-      }
-    }
-  } catch {
-    /* 忽略损坏数据 */
-  }
-  persistUsers(fresh);
-  return fresh;
-}
-
-/**
- * 读取用户表：优先本地已配置的数据，否则用内置系统管理员初始化。
- * 旧版演示账号会被自动清理，用户自行新增的账号不受影响。
- */
-export function loadUsers(): UserRow[] {
-  if (typeof window === "undefined") return userRows;
-  try {
-    const raw = localStorage.getItem(USERS_KEY);
-    if (raw) {
-      const arr = JSON.parse(raw) as UserRow[];
-      if (Array.isArray(arr)) {
-        const { list, changed } = normalizeUsers(arr);
-        if (changed) persistUsers(list);
-        return list;
-      }
-    }
-  } catch {
-    /* 忽略损坏数据 */
-  }
-  return migrateLegacyUsers();
-}
-
-export function saveUsers(list: UserRow[]) {
-  const { list: normalized } = normalizeUsers(list);
-  persistUsers(normalized);
-  return normalized;
-}
-
 export const DEFAULT_PASSWORD = "123456";
 
 export type AuthResult =
   | { ok: true; session: Session }
   | { ok: false; reason: string };
 
-/** 账号密码校验 */
-export function authenticate(username: string, password: string): AuthResult {
+/**
+ * 登录校验（服务端共享用户表）：
+ * 所有浏览器 / 设备访问同一份账号数据，管理员在后台新增的账号即可被他人登录。
+ */
+export async function authenticate(username: string, password: string): Promise<AuthResult> {
   const account = username.trim();
   if (!account) return { ok: false, reason: "请输入账号" };
   if (!password) return { ok: false, reason: "请输入密码" };
+  try {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ account, password }),
+    });
+    if (!res.ok) return { ok: false, reason: "服务异常，请稍后再试" };
+    const data = await res.json();
+    if (data?.ok && data.session) return { ok: true, session: data.session as Session };
+    return { ok: false, reason: data?.reason || "账号或密码错误" };
+  } catch {
+    return { ok: false, reason: "网络异常，请检查连接后重试" };
+  }
+}
 
-  const list = loadUsers();
-  const user = list.find(
-    (u) =>
-      u.username.toLowerCase() === account.toLowerCase() ||
-      u.userId.toLowerCase() === account.toLowerCase()
-  );
-  if (!user) return { ok: false, reason: "账号不存在" };
-  if (user.status === "停用") return { ok: false, reason: "该账号已停用，请联系管理员" };
+/**
+ * 读取旧版本地用户表中「管理员自行新增」的账号，用于迁移到服务端。
+ * 内置演示账号与系统管理员不迁移（服务端已有）。
+ */
+export function readLocalUsersForMigration(): UserRow[] {
+  if (typeof window === "undefined") return [];
+  try {
+    for (const key of LEGACY_USERS_KEYS) {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const arr = JSON.parse(raw) as UserRow[];
+      if (!Array.isArray(arr)) continue;
+      const custom = arr.filter(
+        (u) =>
+          u &&
+          u.userId &&
+          u.userId !== ADMIN_USER_ID &&
+          !LEGACY_DEMO_USER_IDS.includes(u.userId)
+      );
+      if (custom.length > 0) return custom;
+    }
+  } catch {
+    /* 忽略损坏数据 */
+  }
+  return [];
+}
 
-  const expect = user.password || DEFAULT_PASSWORD;
-  if (expect !== password) return { ok: false, reason: "账号或密码错误" };
-
-  return {
-    ok: true,
-    session: {
-      userId: user.userId,
-      username: user.username,
-      name: user.name || user.username,
-      role: user.role,
-    },
-  };
+/** 迁移成功后清理本地旧用户表 */
+export function clearLocalUsers() {
+  if (typeof window === "undefined") return;
+  try {
+    for (const key of LEGACY_USERS_KEYS) localStorage.removeItem(key);
+  } catch {
+    /* 忽略 */
+  }
 }
 
 export function loadSession(): Session | null {
@@ -153,3 +103,6 @@ export function saveSession(session: Session | null) {
     /* 忽略写入失败 */
   }
 }
+
+// 供用户管理页初始渲染占位使用（真实数据来自服务端）
+export const seedUserRows = userRows;
