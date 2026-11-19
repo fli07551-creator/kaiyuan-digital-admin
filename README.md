@@ -138,3 +138,71 @@ Craft Anything 类是「通用自动复刻引擎」，本任务是「单站深�
 │       ├── dashboard.ts   # 各部门真实数据聚合层
 │       └── users.ts       # 用户管理示例数据
 ```
+
+---
+
+## 八、部署到 Render
+
+### 8.1 仓库中已就绪的部署配置
+
+| 文件 | 作用 |
+| --- | --- |
+| `render.yaml` | Render 蓝图（Blueprint），一键创建 Web Service |
+| `package-lock.json` | 锁定依赖版本，保证云端构建可复现 |
+| `.gitignore` | 排除 `node_modules` / `.next`，避免推送构建产物 |
+| `package.json` → `start` | 改为 `next start`，Render 注入的 `PORT` 会被 Next.js 自动读取 |
+
+> 本地预览仍用固定端口：`npm run start:local`（3001），`npm run dev`（3001）。
+
+### 8.2 方式 A：Blueprint 一键部署（推荐）
+
+1. 把本项目推到 GitHub（见 8.4）。
+2. 打开 Render Dashboard → 右上 **New +** → **Blueprint**。
+3. 选择刚推送的仓库 → **Connect**。
+4. Render 自动读取 `render.yaml`，列出待创建服务 `kaiyuan-digital-admin`（free / singapore）→ **Apply**。
+5. 等待构建完成，访问 `https://kaiyuan-digital-admin.onrender.com`。
+
+### 8.3 方式 B：手动 Create a new Web Service（对应你截图那页）
+
+表单逐项填写：
+
+| 字段 | 填写值 |
+| --- | --- |
+| Name | `kaiyuan-digital-admin` |
+| Project（可选） | 留空或新建 |
+| Language | `Node` |
+| Branch | `main` |
+| Region | `Singapore`（离国内最近） |
+| Root Directory | **留空**（仓库根目录就是项目根目录） |
+| Build Command | `npm install --no-audit --no-fund && npm run build` |
+| Start Command | `npm start` |
+| Instance Type | `Free` |
+
+**Environment Variables**（点 Advanced 或部署后到 Environment 页添加）：
+
+```
+NODE_VERSION = 22.11.0
+NEXT_TELEMETRY_DISABLED = 1
+NODE_ENV = production
+```
+
+> 不要自己设置 `PORT`，Render 会自动注入并通过它决定监听端口。
+
+### 8.4 推送到 GitHub
+
+```bash
+cd 企业管理复刻
+git remote add origin https://github.com/<你的GitHub账号>/kaiyuan-digital-admin.git
+git branch -M main
+git push -u origin main
+```
+
+仓库需为 **Public**（Render 免费版拉取公开仓库最省事；私有仓库则需要授权 Render 访问）。
+
+### 8.5 免费实例注意事项
+
+- **冷启动**：Free 实例闲置约 15 分钟后休眠，再次访问需 30–60 秒唤醒。
+- **内存 512MB**：Next.js 构建阶段较吃内存，构建耗时约 3–5 分钟；若构建 OOM，升级到 Starter（$7/月）即可。
+- **自动部署**：`render.yaml` 中已设 `autoDeploy: true`，之后 `git push` 到 `main` 会自动重新部署。
+- **自定义域名**：Settings → Custom Domains 绑定后按提示配置 CNAME。
+
