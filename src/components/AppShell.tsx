@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   ChevronRight,
   PanelLeftClose,
@@ -27,9 +27,11 @@ import {
   Route,
   GitBranch,
   Cog,
+  LogOut,
 } from "lucide-react";
 import type { MenuItem } from "@/lib/menu";
 import { useRbac } from "./RbacProvider";
+import { useAuth } from "./AuthProvider";
 
 const iconMap: Record<string, React.ReactNode> = {
   综合驾驶舱: <Grid2X2 size={15} />,
@@ -131,8 +133,16 @@ function NavNode({ item, collapsed }: { item: MenuItem; collapsed: boolean }) {
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = useActivePath();
-  const { roleId, setRoleId, roles, visibleMenu } = useRbac();
+  const router = useRouter();
+  const { role, visibleMenu } = useRbac();
+  const { user, ready, logout } = useAuth();
+  const isLogin = pathname === "/login";
   const segs = pathname.split("/").filter(Boolean);
+
+  // 未登录访问受保护页面 → 跳登录页
+  useEffect(() => {
+    if (ready && !user && !isLogin) router.replace("/login");
+  }, [ready, user, isLogin, router]);
 
   const crumbs =
     pathname === "/system/permissions"
@@ -142,6 +152,24 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         : segs[0] === "m" && segs.length >= 3
           ? ["开元数智", "综合管理平台", segs[1], segs[2]]
           : ["开元数智", "综合管理平台", "数据驾驶舱"];
+
+  // 登录页不套用后台框架
+  if (isLogin) return <>{children}</>;
+
+  // 会话读取中 / 未登录（等待跳转）
+  if (!ready || !user) {
+    return (
+      <div className="boot">
+        <span className="boot-mark">开</span>
+        <span>开元数智 · 正在校验登录状态…</span>
+      </div>
+    );
+  }
+
+  const handleLogout = () => {
+    logout();
+    router.replace("/login");
+  };
 
   return (
     <div className="app-shell">
@@ -198,20 +226,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <Shield size={16} />
           </Link>
           <div className="topbar-user">
-            <select
-              className="role-select"
-              value={roleId}
-              onChange={(e) => setRoleId(e.target.value)}
-              title="切换当前登录身份（演示）"
-            >
-              {roles.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
-            <span>李飞</span>
-            <span className="avatar">李</span>
+            <span className="user-role">{role.name}</span>
+            <span>{user.name}</span>
+            <span className="avatar">{user.name.slice(0, 1)}</span>
+            <button className="icon-btn logout" title="退出登录" onClick={handleLogout}>
+              <LogOut size={15} />
+            </button>
           </div>
         </header>
         <main className="content">{children}</main>

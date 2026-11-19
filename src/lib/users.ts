@@ -11,10 +11,12 @@ export interface UserRow {
   creator: string;
   createdAt: string;
   isSuperAdmin?: boolean;
+  /** 登录密码；未设置时默认 123456 */
+  password?: string;
 }
 
 export const userRows: UserRow[] = [
-  { userId: "UID202611040001", username: "吴志兵", name: "吴志兵", phone: "--", role: "超级管理员", remark: "--", status: "启用", lockCount: "--", creator: "--", createdAt: "2026-11-04 15:48:48", isSuperAdmin: true },
+  { userId: "UID202611040001", username: "吴志兵", name: "吴志兵", phone: "--", role: "超级管理员", remark: "--", status: "启用", lockCount: "--", creator: "--", createdAt: "2026-11-04 15:48:48", isSuperAdmin: true, password: "123456" },
   { userId: "UID202607220001", username: "text", name: "张三", phone: "185222222222", role: "超级管理员", remark: "--", status: "启用", lockCount: "--", creator: "--", createdAt: "2026-07-22 16:20:10", isSuperAdmin: true },
   { userId: "UID202604280002", username: "qdjxbjx", name: "青岛建诚信机电设备", phone: "--", role: "电商管理员", remark: "--", status: "启用", lockCount: "--", creator: "版图", createdAt: "2026-04-28 15:42:23" },
   { userId: "UID202604170001", username: "ceshi", name: "测试员", phone: "--", role: "采购主管", remark: "--", status: "启用", lockCount: "--", creator: "测试", createdAt: "2026-04-17 16:18:03" },

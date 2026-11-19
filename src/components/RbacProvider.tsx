@@ -15,8 +15,10 @@ import {
   allPageKeys,
   defaultPerms,
   pageKey,
+  roleIdFromText,
   type RoleDef,
 } from "@/lib/rbac";
+import { useAuth } from "./AuthProvider";
 
 const STORAGE_KEY = "kaiyuan-rbac-v1";
 
@@ -43,9 +45,15 @@ interface RbacCtx {
 const Ctx = createContext<RbacCtx | null>(null);
 
 export function RbacProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
   const [roleId, setRoleIdState] = useState<string>(DEFAULT_ROLE_ID);
   const [perms, setPerms] = useState<Record<string, string[]>>(() => defaultPerms());
   const [hydrated, setHydrated] = useState(false);
+
+  // 登录身份变化时，权限角色跟随该用户的岗位
+  useEffect(() => {
+    if (user) setRoleIdState(roleIdFromText(user.role));
+  }, [user]);
 
   // 读取本地保存的授权配置
   useEffect(() => {

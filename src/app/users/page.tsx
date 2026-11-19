@@ -55,6 +55,7 @@ const emptyForm = (): UserRow => ({
   lockCount: "--",
   creator: "李飞",
   createdAt: "",
+  password: "",
 });
 
 export default function UsersPage() {
@@ -68,6 +69,7 @@ export default function UsersPage() {
   const [pageSize, setPageSize] = useState(10);
   const [editing, setEditing] = useState<{ mode: "create" | "edit"; data: UserRow } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [pwdReset, setPwdReset] = useState<{ user: UserRow; value: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // 读取本地数据
@@ -170,12 +172,19 @@ export default function UsersPage() {
           creator: "李飞",
           remark: d.remark.trim() || "--",
           phone: d.phone.trim() || "--",
+          password: d.password?.trim() || "123456",
         },
         ...prev,
       ]);
-      say(`已新增用户「${d.username}」`);
+      say(`已新增用户「${d.username}」，初始密码 ${d.password?.trim() || "123456"}`);
     } else {
-      setRows((prev) => prev.map((r) => (r.userId === d.userId ? { ...d } : r)));
+      setRows((prev) =>
+        prev.map((r) =>
+          r.userId === d.userId
+            ? { ...d, password: d.password?.trim() || r.password || "123456" }
+            : r
+        )
+      );
       say(`已保存「${d.username}」的修改`);
     }
     setEditing(null);
@@ -204,13 +213,25 @@ export default function UsersPage() {
 
   /* ---------- 重置密码 ---------- */
   const resetPassword = (row: UserRow) => {
-    if (!window.confirm(`确认将「${row.username}」的密码重置为初始密码 123456？`)) return;
+    setPwdReset({ user: row, value: "" });
+  };
+
+  const confirmPwdReset = () => {
+    if (!pwdReset) return;
+    const v = pwdReset.value.trim();
+    if (v.length < 6) {
+      say("密码至少 6 位");
+      return;
+    }
     setRows((prev) =>
       prev.map((r) =>
-        r.userId === row.userId ? { ...r, lockCount: "0", remark: "密码已重置" } : r
+        r.userId === pwdReset.user.userId
+          ? { ...r, password: v, lockCount: "0", remark: "密码已重置" }
+          : r
       )
     );
-    say(`「${row.username}」密码已重置为 123456`);
+    say(`「${pwdReset.user.username}」的登录密码已更新`);
+    setPwdReset(null);
   };
 
   /* ---------- 导出 CSV ---------- */
@@ -508,6 +529,19 @@ export default function UsersPage() {
                 </select>
               </label>
               <label className="field-row">
+                <span className="field-label">登录密码</span>
+                <input
+                  className="field-input"
+                  value={editing.data.password ?? ""}
+                  onChange={(e) =>
+                    setEditing({ ...editing, data: { ...editing.data, password: e.target.value } })
+                  }
+                  placeholder={
+                    editing.mode === "create" ? "默认 123456，可自定义" : "留空则不修改"
+                  }
+                />
+              </label>
+              <label className="field-row">
                 <span className="field-label">状态</span>
                 <select
                   className="field-input"
@@ -541,6 +575,44 @@ export default function UsersPage() {
               </button>
               <button className="btn btn-primary" onClick={saveForm}>
                 保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 重置密码弹窗 */}
+      {pwdReset && (
+        <div className="modal-mask" onClick={() => setPwdReset(null)}>
+          <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <span>重置密码 · {pwdReset.user.username}</span>
+              <button className="modal-close" onClick={() => setPwdReset(null)}>
+                <X size={16} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <label className="field-row">
+                <span className="field-label">新密码</span>
+                <input
+                  className="field-input"
+                  autoFocus
+                  value={pwdReset.value}
+                  placeholder="至少 6 位"
+                  onChange={(e) => setPwdReset({ ...pwdReset, value: e.target.value })}
+                  onKeyDown={(e) => e.key === "Enter" && confirmPwdReset()}
+                />
+              </label>
+              <p className="modal-hint">
+                设置后该用户即可用新密码登录，原密码立即失效。
+              </p>
+            </div>
+            <div className="modal-foot">
+              <button className="btn" onClick={() => setPwdReset(null)}>
+                取消
+              </button>
+              <button className="btn btn-primary" onClick={confirmPwdReset}>
+                确认重置
               </button>
             </div>
           </div>

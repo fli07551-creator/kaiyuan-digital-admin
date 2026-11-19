@@ -119,3 +119,14 @@ export function defaultPerms(): Record<string, string[]> {
 
 /** 当前登录身份（演示用，默认管理员） */
 export const DEFAULT_ROLE_ID = "admin";
+
+/** 把用户表里的角色文本映射到权限角色 id */
+export function roleIdFromText(roleText?: string): string {
+  const t = (roleText ?? "").trim();
+  if (/超级管理员|电商管理员/.test(t)) return "admin";
+  if (/销售|采购/.test(t)) return "sales";
+  if (/财务|会计/.test(t)) return "finance";
+  if (/人事|人力|行政/.test(t)) return "hr";
+  if (/生产|库管|质检|设备|研发|工艺/.test(t)) return "production";
+  return "sales";
+}
