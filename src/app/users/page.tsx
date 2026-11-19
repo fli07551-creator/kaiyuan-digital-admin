@@ -17,10 +17,12 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { userRows as seedRows, type UserRow } from "@/lib/users";
-import { loadUsers as loadUsersSafe } from "@/lib/auth";
-
-const STORAGE_KEY = "kaiyuan-users-v1";
+import {
+  userRows as seedRows,
+  ADMIN_USER_ID,
+  type UserRow,
+} from "@/lib/users";
+import { loadUsers as loadUsersSafe, saveUsers } from "@/lib/auth";
 
 const ROLE_OPTIONS = [
   "超级管理员",
@@ -73,7 +75,7 @@ export default function UsersPage() {
   const [pwdReset, setPwdReset] = useState<{ user: UserRow; value: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // 读取本地数据（统一走自愈逻辑，保证演示账号始终存在）
+  // 读取本地数据：自动清理旧版演示账号，保留系统管理员和自建账号
   useEffect(() => {
     setRows(loadUsersSafe());
     setHydrated(true);
@@ -82,17 +84,15 @@ export default function UsersPage() {
   // 持久化
   useEffect(() => {
     if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
-    } catch {
-      /* 忽略写入失败 */
-    }
+    saveUsers(rows);
   }, [rows, hydrated]);
 
   const say = (msg: string) => {
     setToast(msg);
     window.setTimeout(() => setToast(null), 2200);
   };
+
+  const isProtectedAdmin = (row: UserRow) => row.userId === ADMIN_USER_ID;
 
   const filtered = useMemo(() => {
     const q = applied.trim().toLowerCase();
@@ -156,6 +156,10 @@ export default function UsersPage() {
       say("用户名为必填项");
       return;
     }
+    if (d.userId === ADMIN_USER_ID && d.status === "停用") {
+      say("系统管理员账号不能停用");
+      return;
+    }
     if (editing.mode === "create") {
       setRows((prev) => [
         {
@@ -189,6 +193,13 @@ export default function UsersPage() {
       say("请先勾选要操作的用户");
       return;
     }
+    if (
+      status === "停用" &&
+      rows.some((r) => selected.includes(r.userId) && isProtectedAdmin(r))
+    ) {
+      say("系统管理员账号不能停用");
+      return;
+    }
     setRows((prev) =>
       prev.map((r) => (selected.includes(r.userId) ? { ...r, status } : r))
     );
@@ -198,6 +209,10 @@ export default function UsersPage() {
 
   /* ---------- 删除 ---------- */
   const removeRow = (row: UserRow) => {
+    if (isProtectedAdmin(row)) {
+      say("系统管理员账号不能删除");
+      return;
+    }
     if (!window.confirm(`确认删除用户「${row.username}」？删除后不可恢复。`)) return;
     setRows((prev) => prev.filter((r) => r.userId !== row.userId));
     setSelected((s) => s.filter((id) => id !== row.userId));
@@ -392,7 +407,12 @@ export default function UsersPage() {
                   <button className="row-icon" title="重置密码" onClick={() => resetPassword(u)}>
                     <KeyRound size={14} />
                   </button>
-                  <button className="row-icon danger" title="删除" onClick={() => removeRow(u)}>
+                  <button
+                    className="row-icon danger"
+                    title={isProtectedAdmin(u) ? "系统管理员账号不能删除" : "删除"}
+                    disabled={isProtectedAdmin(u)}
+                    onClick={() => removeRow(u)}
+                  >
                     <Trash2 size={14} />
                   </button>
                 </td>
@@ -539,6 +559,7 @@ export default function UsersPage() {
                 <select
                   className="field-input"
                   value={editing.data.status}
+                  disabled={editing.data.userId === ADMIN_USER_ID}
                   onChange={(e) =>
                     setEditing({
                       ...editing,

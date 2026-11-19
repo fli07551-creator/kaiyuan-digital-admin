@@ -1,6 +1,13 @@
-import { userRows, type UserRow } from "./users";
+import {
+  userRows,
+  ADMIN_USER_ID,
+  LEGACY_DEMO_USER_IDS,
+  type UserRow,
+} from "./users";
 
-export const USERS_KEY = "kaiyuan-users-v1";
+/** 用户表使用新键，旧版演示账号数据会在首次读取时迁移清理 */
+export const USERS_KEY = "kaiyuan-users-v2";
+const LEGACY_USERS_KEY = "kaiyuan-users-v1";
 export const SESSION_KEY = "kaiyuan-auth-v1";
 
 /** 登录会话（不含密码） */
@@ -11,13 +18,61 @@ export interface Session {
   role: string;
 }
 
-/** 必须保证可登录的演示账号：本地数据被改坏时自动补回 */
-const MUST_HAVE_ACCOUNTS = ["吴志兵", "ceshi", "杜晓晓"];
+function seedUsers(): UserRow[] {
+  return userRows.map((u) => ({ ...u }));
+}
+
+function persistUsers(list: UserRow[]) {
+  try {
+    localStorage.setItem(USERS_KEY, JSON.stringify(list));
+    localStorage.removeItem(LEGACY_USERS_KEY);
+  } catch {
+    /* 忽略写入失败 */
+  }
+}
+
+/** 清理旧版内置演示账号，并确认系统管理员始终存在 */
+function normalizeUsers(list: UserRow[]): { list: UserRow[]; changed: boolean } {
+  const cleaned = list.filter(
+    (u) => u && u.userId !== undefined && !LEGACY_DEMO_USER_IDS.includes(u.userId)
+  );
+  const hasAdmin = cleaned.some((u) => u.userId === ADMIN_USER_ID);
+  const result = hasAdmin ? cleaned : [...seedUsers(), ...cleaned];
+  return {
+    list: result,
+    changed: !hasAdmin || cleaned.length !== list.length || result.length !== list.length,
+  };
+}
 
 /**
- * 读取用户表：优先本地已编辑的数据，否则用内置种子。
- * 自愈：若本地数据缺少演示账号（例如被导入/编辑覆盖过），自动补回并写回，
- * 保证任何情况下演示账号都能登录。用户自己新增的账号不受影响。
+ * 首次升级时读取旧用户表：只保留管理员 + 管理员自行新增的账号，
+ * 旧版内置演示账号全部丢弃，然后迁移到新存储键。
+ */
+function migrateLegacyUsers(): UserRow[] {
+  const fresh = seedUsers();
+  try {
+    const raw = localStorage.getItem(LEGACY_USERS_KEY);
+    if (raw) {
+      const legacy = JSON.parse(raw) as UserRow[];
+      if (Array.isArray(legacy)) {
+        const custom = legacy.filter(
+          (u) => u && u.userId !== ADMIN_USER_ID && !LEGACY_DEMO_USER_IDS.includes(u.userId)
+        );
+        const merged = [...fresh, ...custom];
+        persistUsers(merged);
+        return merged;
+      }
+    }
+  } catch {
+    /* 忽略损坏数据 */
+  }
+  persistUsers(fresh);
+  return fresh;
+}
+
+/**
+ * 读取用户表：优先本地已配置的数据，否则用内置系统管理员初始化。
+ * 旧版演示账号会被自动清理，用户自行新增的账号不受影响。
  */
 export function loadUsers(): UserRow[] {
   if (typeof window === "undefined") return userRows;
@@ -25,54 +80,22 @@ export function loadUsers(): UserRow[] {
     const raw = localStorage.getItem(USERS_KEY);
     if (raw) {
       const arr = JSON.parse(raw) as UserRow[];
-      if (Array.isArray(arr) && arr.length) {
-        let changed = false;
-        const merged = [...arr];
-        for (const name of MUST_HAVE_ACCOUNTS) {
-          const exists = merged.some(
-            (u) => (u.username || "").toLowerCase() === name.toLowerCase()
-          );
-          if (!exists) {
-            const seed = userRows.find((s) => s.username === name);
-            if (seed) {
-              merged.push({ ...seed });
-              changed = true;
-            }
-          }
-        }
-        if (changed) {
-          try {
-            localStorage.setItem(USERS_KEY, JSON.stringify(merged));
-          } catch {
-            /* 忽略 */
-          }
-        }
-        return merged;
+      if (Array.isArray(arr)) {
+        const { list, changed } = normalizeUsers(arr);
+        if (changed) persistUsers(list);
+        return list;
       }
     }
   } catch {
     /* 忽略损坏数据 */
   }
-  return userRows;
-}
-
-/** 彻底恢复内置演示用户（丢弃本地所有改动） */
-export function resetUsers(): UserRow[] {
-  const fresh = userRows.map((u) => ({ ...u }));
-  try {
-    localStorage.setItem(USERS_KEY, JSON.stringify(fresh));
-  } catch {
-    /* 忽略 */
-  }
-  return fresh;
+  return migrateLegacyUsers();
 }
 
 export function saveUsers(list: UserRow[]) {
-  try {
-    localStorage.setItem(USERS_KEY, JSON.stringify(list));
-  } catch {
-    /* 忽略写入失败 */
-  }
+  const { list: normalized } = normalizeUsers(list);
+  persistUsers(normalized);
+  return normalized;
 }
 
 export const DEFAULT_PASSWORD = "123456";
@@ -127,6 +150,6 @@ export function saveSession(session: Session | null) {
     if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session));
     else localStorage.removeItem(SESSION_KEY);
   } catch {
-    /* 忽略 */
+    /* 忽略写入失败 */
   }
 }
