@@ -174,19 +174,18 @@ Craft Anything 类是「通用自动复刻引擎」，本任务是「单站深�
 | Branch | `main` |
 | Region | `Singapore`（离国内最近） |
 | Root Directory | **留空**（仓库根目录就是项目根目录） |
-| Build Command | `npm install --no-audit --no-fund && npm run build` |
+| Build Command | `npm install --include=dev --no-audit --no-fund && npm run build` |
 | Start Command | `npm start` |
 | Instance Type | `Free` |
 
 **Environment Variables**（点 Advanced 或部署后到 Environment 页添加）：
 
 ```
-NODE_VERSION = 22.11.0
 NEXT_TELEMETRY_DISABLED = 1
-NODE_ENV = production
 ```
 
 > 不要自己设置 `PORT`，Render 会自动注入并通过它决定监听端口。
+> **也不要设置 `NODE_ENV=production`**：Render 构建阶段会带入环境变量，而该变量会让 `npm install` 跳过 devDependencies，导致 `tsconfig.json` 的 `@/*` 别名失效，构建报 `Module not found: Can't resolve '@/lib/...'`。构建命令里的 `--include=dev` 就是为此兜底的。
 
 ### 8.4 推送到 GitHub
 
@@ -206,3 +205,20 @@ git push -u origin main
 - **自动部署**：`render.yaml` 中已设 `autoDeploy: true`，之后 `git push` 到 `main` 会自动重新部署。
 - **自定义域名**：Settings → Custom Domains 绑定后按提示配置 CNAME。
 
+
+### 8.6 已知构建失败与处理
+
+**现象**：部署状态 `Failed deploy`，日志中出现
+`Module not found: Can't resolve '@/lib/dashboard'`、`'@/components/AppShell'`。
+
+**原因**：`npm install` 只装了生产依赖（日志里是 `added 23 packages`，正常应在 100 以上）。
+devDependencies 缺失后，Next.js 不加载 `tsconfig.json` 的 `paths` 别名，`@/*` 全部解析失败。
+
+**触发条件**：在 Render 环境变量里设置了 `NODE_ENV=production`（构建阶段即生效），
+或使用了 `npm ci --omit=dev` / `--production`。
+
+**修复**：`render.yaml` 中已做两处调整——
+1. 移除 `NODE_ENV` 环境变量；
+2. 构建命令改为 `npm install --include=dev --no-audit --no-fund && npm run build`。
+
+改完推送到 `main`，在 Render 的 Blueprint 页面点 **Manual sync** 重新部署即可。

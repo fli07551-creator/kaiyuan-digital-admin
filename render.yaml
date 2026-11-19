@@ -6,13 +6,9 @@ services:
     region: singapore
     branch: main
     autoDeploy: true
-    buildCommand: npm install --no-audit --no-fund && npm run build
+    buildCommand: npm install --include=dev --no-audit --no-fund && npm run build
     startCommand: npm start
     healthCheckPath: /
     envVars:
-      - key: NODE_VERSION
-        value: "22.11.0"
       - key: NEXT_TELEMETRY_DISABLED
         value: "1"
-      - key: NODE_ENV
-        value: production
